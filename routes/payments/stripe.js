@@ -1,113 +1,106 @@
 let express = require('express');
-let common = require('../../lib/common');
-let numeral = require('numeral');
-let stripe = require('stripe')(common.getPaymentConfig().secretKey);
 let router = express.Router();
+const util = require('../util.js');
+const uuid = require('uuid');
 
 // The homepage of the site
 router.post('/checkout_action', (req, res, next) => {
+    // define DB
+    console.log(req.session.customer)
     let db = req.app.db;
-    let config = req.app.config;
-    let stripeConfig = common.getPaymentConfig();
+    // charge via pointsnet
+    let order = {
+        order_id: uuid(),
+        total_amount: 20,
+        currency: 'IDR',
+        first_name: req.body.first_name,
+        last_name: req.body.last_name,
+        email: req.body.email,
+        phone: req.body.phone_number,
+        status: 1
+    };
 
-    // charge via stripe
-    stripe.charges.create({
-        amount: numeral(req.session.totalCartAmount).format('0.00').replace('.', ''),
-        currency: stripeConfig.stripeCurrency,
-        source: req.body.stripeToken,
-        description: stripeConfig.stripeDescription
-    }, (err, charge) => {
-        if(err){
-            console.info(err.stack);
-            req.session.messageType = 'danger';
-            req.session.message = 'Your payment has declined. Please try again';
-            req.session.paymentApproved = false;
-            req.session.paymentDetails = '';
-            res.redirect('/pay');
-            return;
-        }
-
-        // order status
-        let paymentStatus = 'Paid';
-        if(charge.paid !== true){
-            paymentStatus = 'Declined';
-        }
-
-        // new order doc
-        let orderDoc = {
-            orderPaymentId: charge.id,
-            orderPaymentGateway: 'Stripe',
-            orderPaymentMessage: charge.outcome.seller_message,
-            orderTotal: req.session.totalCartAmount,
-            orderEmail: req.body.shipEmail,
-            orderFirstname: req.body.shipFirstname,
-            orderLastname: req.body.shipLastname,
-            orderAddr1: req.body.shipAddr1,
-            orderAddr2: req.body.shipAddr2,
-            orderCountry: req.body.shipCountry,
-            orderState: req.body.shipState,
-            orderPostcode: req.body.shipPostcode,
-            orderPhoneNumber: req.body.shipPhoneNumber,
-            orderComment: req.body.orderComment,
-            orderStatus: paymentStatus,
-            orderDate: new Date(),
-            orderProducts: req.session.cart
-        };
-
-        // insert order into DB
-        db.orders.insert(orderDoc, (err, newDoc) => {
-            if(err){
-                console.info(err.stack);
+    util.doRequest(
+        {
+            query:
+                `mutation {
+                    create (transaction: {
+                    order_id: "` + order.order_id + `",
+                    total_amount: ` + order.total_amount + `,
+                    currency: "` + order.currency + `"},
+                    items: [{
+                        name: "Baju Mahal",
+                        category: "asdasd",
+                        price: 200,
+                        quantity: 1
+                    }],
+                    customer: {
+                        first_name: "` + req.session.customer.firstName + `",
+                        last_name: "` + req.session.customer.lastName + `",
+                        email: "kodrat.meden@gmail.com",
+                        phone: "` + req.session.customer.phone + `"
+                    },
+                    expiry: {
+                        start_time: "2019-12-21T18:24:34+07:00",
+                        unit: "minute",
+                        duration: 600
+                    }) {transaction_id}}`
+        },
+        (err, response) => {
+            if(!response){
+                res.send(500).send('Internal Server Error');
+                return;
             }
-
-            // get the new ID
-            let newId = newDoc.insertedIds['0'];
-
-            // add to lunr index
-            common.indexOrders(req.app)
-            .then(() => {
-                // if approved, send email etc
-                if(charge.paid === true){
-                    // set the results
-                    req.session.messageType = 'success';
-                    req.session.message = 'Your payment was successfully completed';
-                    req.session.paymentEmailAddr = newDoc.ops[0].orderEmail;
-                    req.session.paymentApproved = true;
-                    req.session.paymentDetails = '<p><strong>Order ID: </strong>' + newId + '</p><p><strong>Transaction ID: </strong>' + charge.id + '</p>';
-
-                    // set payment results for email
-                    let paymentResults = {
-                        message: req.session.message,
-                        messageType: req.session.messageType,
-                        paymentEmailAddr: req.session.paymentEmailAddr,
-                        paymentApproved: true,
-                        paymentDetails: req.session.paymentDetails
-                    };
-
-                    // clear the cart
-                    if(req.session.cart){
-                        req.session.cart = null;
-                        req.session.orderId = null;
-                        req.session.totalCartAmount = 0;
-                    }
-
-                    // send the email with the response
-                    // TODO: Should fix this to properly handle result
-                    common.sendEmail(req.session.paymentEmailAddr, 'Your payment with ' + config.cartTitle, common.getEmailTemplate(paymentResults));
-
-                    // redirect to outcome
-                    res.redirect('/payment/' + newId);
-                }else{
-                    // redirect to failure
-                    req.session.messageType = 'danger';
-                    req.session.message = 'Your payment has declined. Please try again';
-                    req.session.paymentApproved = false;
-                    req.session.paymentDetails = '<p><strong>Order ID: </strong>' + newId + '</p><p><strong>Transaction ID: </strong>' + charge.id + '</p>';
-                    res.redirect('/payment/' + newId);
+            if(err && response.statusCode > 200){
+                res.status(400).send({error_message: 'error Bad Request'});
+                return;
+            }
+            // db insert to order collections
+            db.orders.insert(order, (err, newDoc) => {
+                if(err){
+                    console.log(err.stack);
                 }
+                req.session.orderId = newDoc.insertedIds['0'];
             });
+
+            if(req.session.cart){
+                req.session.cart = null;
+                req.session.orderId = null;
+                req.session.totalCartAmount = 0;
+            }
+            res.send({message: response});
+        }
+    );
+});
+
+router.post('/callback', (req, res, next) => {
+    let status = req.body.status;
+    let db = req.app.db;
+    console.log('status', status);
+    if(status === 0){
+        res.redirect('/success');
+    }else if(status === 1){
+        db.orders.update({order_id: req.body.order_id}, {$set: {status: status}}, {multi: false}, (err, numReplaced) => {
+            if(err){
+                console.log(err.stack);
+            }
         });
-    });
+    }else{
+        console.log('Failed');
+    }
+});
+
+router.post('/handle', (req, res, next) => {
+    let status = req.body.status;
+    if(status === '0'){
+        res.send('Payment Success');
+    }
+    if(status === '1'){
+        res.send('Payment Pending');
+    }
+    if(status === '2'){
+        res.send('Payment Failed');
+    }
 });
 
 module.exports = router;

@@ -273,6 +273,7 @@ app.use('/', user);
 app.use('/', admin);
 app.use('/paypal', paypal);
 app.use('/stripe', stripe);
+app.use('/stripe/callback', stripe);
 app.use('/authorizenet', authorizenet);
 
 // catch 404 and forward to error handler

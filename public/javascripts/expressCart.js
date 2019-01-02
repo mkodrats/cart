@@ -261,29 +261,23 @@ $(document).ready(function (){
     });
 
     // validate form and show stripe payment
-    $('#stripeButton').validator().on('click', function(e){
+    $('#stripeButton').on('click', function(e){
         e.preventDefault();
-        if($('#shipping-form').validator('validate').has('.has-error').length === 0){
-            // if no form validation errors
-            var handler = window.StripeCheckout.configure({
-                key: $('#stripeButton').data('key'),
-                image: $('#stripeButton').data('image'),
-                locale: 'auto',
-                token: function(token){
-                    $('#shipping-form').append('<input type="hidden" name="stripeToken" value="' + token.id + '" />');
-                    $('#shipping-form').submit();
-                }
-            });
+        var unindexed_array = $('#shipping-form').serializeArray();
+        var data = {};
 
-            // open the stripe payment form
-            handler.open({
-                name: $('#stripeButton').data('name'),
-                description: $('#stripeButton').data('description'),
-                zipCode: $('#stripeButton').data('zipCode'),
-                amount: $('#stripeButton').data('amount'),
-                currency: $('#stripeButton').data('currency')
-            });
-        }
+        $.map(unindexed_array, function(n, i){
+            data[n['name']] = n['value'];
+        });
+        $.ajax({
+            type: 'POST',
+            url: '/stripe/checkout_action',
+            data: Object.create(data),
+            dataType: 'json',
+            success: function (response){
+                window.location.replace('http://localhost:3000/' + response.message.create.transaction_id);
+            }
+        });
     });
 
     // call update settings API
