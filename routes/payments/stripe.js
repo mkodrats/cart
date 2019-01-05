@@ -6,13 +6,13 @@ const uuid = require('uuid');
 // The homepage of the site
 router.post('/checkout_action', (req, res, next) => {
     // define DB
-    console.log(req.session.customer)
+    console.log(req.session.customer);
     let db = req.app.db;
     // charge via pointsnet
     let order = {
         order_id: uuid(),
         total_amount: 20,
-        currency: 'IDR',
+        currency: 'HKD',
         first_name: req.body.first_name,
         last_name: req.body.last_name,
         email: req.body.email,
@@ -93,13 +93,13 @@ router.post('/callback', (req, res, next) => {
 router.post('/handle', (req, res, next) => {
     let status = req.body.status;
     if(status === '0'){
-        res.send('Payment Success');
+        res.send('<script>alert("Payment Success"); window.location = "http://localhost:1111";</script>');
     }
     if(status === '1'){
-        res.send('Payment Pending');
+        res.send('<script>alert("Payment Pending"); window.location = "http://localhost:1111";</script>');
     }
     if(status === '2'){
-        res.send('Payment Failed');
+        res.send('<script>alert("Payment Failed"); window.location = "http://localhost:1111";</script>');
     }
 });
 
