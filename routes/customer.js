@@ -22,6 +22,7 @@ router.post('/customer/create', (req, res) => {
         password: bcrypt.hashSync(req.body.password, 10),
         created: new Date()
     };
+    console.log(doc)
 
     // check for existing customer
     db.customers.findOne({email: req.body.email}, (err, customer) => {

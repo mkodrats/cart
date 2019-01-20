@@ -76,7 +76,6 @@ router.post('/checkout_action', (req, res, next) => {
 router.post('/callback', (req, res, next) => {
     let status = req.body.status;
     let db = req.app.db;
-    console.log('status', status);
     if(status === 0){
         res.redirect('/success');
     }else if(status === 1){
@@ -90,17 +89,41 @@ router.post('/callback', (req, res, next) => {
     }
 });
 
-router.post('/handle', (req, res, next) => {
-    let status = req.body.status;
-    if(status === '0'){
-        res.send('<script>alert("Payment Success"); window.location = "http://localhost:1111";</script>');
-    }
-    if(status === '1'){
-        res.send('<script>alert("Payment Pending"); window.location = "http://localhost:1111";</script>');
-    }
-    if(status === '2'){
-        res.send('<script>alert("Payment Failed"); window.location = "http://localhost:1111";</script>');
-    }
+router.get('/handle/:id', (req, res, next) => {
+    let order_id = req.params.id;
+    let db = req.app.db;
+    db.orders.findOne({order_id: order_id}, (err, order) => {
+        if(err){
+            console.info(err.stack);
+        }
+        let status = order.status;
+        if(status === 0){
+            req.session.message = 'Payment Approved';
+            req.session.messageType = 'danger';
+            res.redirect('/');
+            return;
+        }
+
+        if(status === 1){
+            req.session.message = 'Payment Pending';
+            req.session.messageType = 'danger';
+            res.redirect('/');
+            return;
+        }
+        if(status === 2){
+            req.session.message = 'Payment Failed';
+            req.session.messageType = 'danger';
+            res.redirect('/');
+            return;
+        }
+    });
 });
+
+router.get('/success', (req, res, next) => {
+    console.log('masuk')
+    res.render('success', {
+        title: 'Payment Success'
+    })
+})
 
 module.exports = router;
